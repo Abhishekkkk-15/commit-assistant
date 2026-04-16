@@ -68,6 +68,7 @@ go build -o commit-assistant main.go
 | `--show-config` | Displays your current settings (API key is partially masked). |
 | `--message "<msg>"` | Manually lint a specific message string. |
 | `--file <path>` | Lint a commit message from a file (used by git hooks). |
+| `--install-repo <path>` | Install the hook in a specific repository path. |
 
 ### Git Hook Integration
 Once installed, the global hook triggers on every `git commit`. 
@@ -83,8 +84,8 @@ Settings are stored in `~/.commit-assistant/config.json`.
 | Setting | Default | Description |
 | :--- | :--- | :--- |
 | `model` | `openai/gpt-oss-120b` | The AI model used for suggestions. |
-| `max_subject_length` | `72` | Maximum character count for the subject line. |
-| `max_body_line_length` | `80` | Maximum character count per line in the body. |
+| `max_subject_length` | `120` | Maximum character count for the subject line. |
+| `max_body_line_length` | `240` | Maximum character count per line in the body. |
 | `strict_mode` | `false` | If true, warnings will also reject the commit. |
 
 ---
