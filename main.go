@@ -38,8 +38,8 @@ type LintResult struct {
 func DefaultConfig() Config {
 	return Config{
 		Model:          "openai/gpt-oss-120b",
-		MaxSubjectLen:  72,
-		MaxBodyLineLen: 80,
+		MaxSubjectLen:  120,
+		MaxBodyLineLen: 240,
 		StrictMode:     false,
 	}
 }
@@ -119,6 +119,20 @@ func ParseCommitMessage(raw string) (*CommitMessage, error) {
 		}
 	}
 	return msg, nil
+}
+func FormatCommitMessage(raw string) string {
+	// Replace literal \n with actual newlines
+	raw = strings.ReplaceAll(raw, "\\n", "\n")
+	raw = strings.ReplaceAll(raw, "\\r\\n", "\n")
+	raw = strings.ReplaceAll(raw, "\\r", "\n")
+
+	// Handle multiple spaces
+	lines := strings.Split(raw, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSpace(line)
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func Lint(message string, config *Config) LintResult {
@@ -469,6 +483,7 @@ func main() {
 		}
 	}
 
+	commitMessage = FormatCommitMessage(commitMessage)
 	commitMessage = strings.TrimSpace(commitMessage)
 	if commitMessage == "" {
 		fmt.Println("❌ No commit message provided")
