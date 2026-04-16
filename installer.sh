@@ -44,7 +44,8 @@ go build -o "$BINARY_NAME" main.go
 # Determine installation path based on OS
 if [[ "$OS" == "MINGW"* ]] || [[ "$OS" == "MSYS"* ]] || [[ "$OS" == "CYGWIN"* ]]; then
     # Windows with Git Bash
-    INSTALL_DIR="/usr/bin"
+    INSTALL_DIR="$HOME/bin"
+    mkdir -p "$INSTALL_DIR"
     echo -e "${BLUE}📁 Installing to $INSTALL_DIR (Windows Git Bash)...${NC}"
 elif [[ "$OS" == "Linux" ]] || [[ "$OS" == "Darwin" ]]; then
     # Linux or MacOS

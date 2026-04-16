@@ -288,8 +288,57 @@ exit 0
 
 	// Reinitializehooks in existing repos (optional)
 	fmt.Println("✅ Global hook installed!")
-	fmt.Println("📌 To apply to existing repos, run 'git init' in each repository")
+	return nil
+}
 
+func InstallHookInRepo(repoPath string) error {
+	// Get absolute path
+	absPath, err := filepath.Abs(repoPath)
+	if err != nil {
+		return fmt.Errorf("invalid path: %v", err)
+	}
+
+	// Check if it's a git repo
+	gitPath := filepath.Join(absPath, ".git")
+	if _, err := os.Stat(gitPath); err != nil {
+		return fmt.Errorf("not a git repository: %s", absPath)
+	}
+
+	hooksDir := filepath.Join(gitPath, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return err
+	}
+
+	// Get current binary path
+	binaryPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	// Create hook content
+	hookContent := fmt.Sprintf(`#!/bin/sh
+# Commit Assistant - AI-powered commit message linter
+
+COMMIT_MSG_FILE=$1
+
+# Run the linter
+"%s" --file "$COMMIT_MSG_FILE"
+
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "💡 Want AI to improve your message? Run: commit-assistant --improve \"your message\""
+    exit 1
+fi
+
+exit 0
+`, binaryPath)
+
+	hookPath := filepath.Join(hooksDir, "commit-msg")
+	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
+		return err
+	}
+
+	fmt.Printf("✅ Hook installed in: %s\n", absPath)
 	return nil
 }
 
@@ -301,6 +350,7 @@ func main() {
 		configAPIKey = flag.String("config-api-key", "", "Set your Groq API key")
 		showConfig   = flag.Bool("show-config", false, "Show current configuration")
 		install      = flag.Bool("install", false, "Install global git hook")
+		installRepo  = flag.String("install-repo", "", "Install hook in specific repository (provide path)")
 	)
 	flag.Parse()
 
@@ -345,6 +395,14 @@ func main() {
 		fmt.Println("1. Set your Groq API key:")
 		fmt.Println("   commit-assistant --config-api-key YOUR_API_KEY")
 		fmt.Println("2. Make a commit and watch it work!")
+		return
+	}
+
+	if *installRepo != "" {
+		if err := InstallHookInRepo(*installRepo); err != nil {
+			fmt.Printf("❌ Installation failed: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
