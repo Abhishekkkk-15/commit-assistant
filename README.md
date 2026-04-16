@@ -69,6 +69,7 @@ go build -o commit-assistant main.go
 | `--message "<msg>"` | Manually lint a specific message string. |
 | `--file <path>` | Lint a commit message from a file (used by git hooks). |
 | `--install-repo <path>` | Install the hook in a specific repository path. |
+| `--generate` | Generate a commit message from staged changes using AI. |
 
 ### Git Hook Integration
 Once installed, the global hook triggers on every `git commit`. 

@@ -254,6 +254,96 @@ Return ONLY the improved commit message (no quotes, no extra text):`, originalMe
 
 	return enhanced, nil
 }
+
+func GenerateFromDiff(config *Config) (string, error) {
+	if config.GroqAPIKey == "" {
+		return "", fmt.Errorf("Groq API key not configured. Run: commit-assistant --config-api-key YOUR_KEY")
+	}
+
+	cmd := exec.Command("git", "diff", "--cached")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to get git diff: %v", err)
+	}
+
+	diff := strings.TrimSpace(out.String())
+	if diff == "" {
+		return "", fmt.Errorf("no changes staged. Run 'git add' to stage changes first")
+	}
+
+	// Truncate diff if it's too large (safety measure for token limits)
+	if len(diff) > 10000 {
+		diff = diff[:10000] + "\n... (diff truncated)"
+	}
+
+	prompt := fmt.Sprintf(`Analyze the following git diff and generate a professional commit message following Conventional Commits format.
+
+Diff:
+"%s"
+
+Rules:
+- Format: <type>(scope): <description>
+- Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build
+- Keep the subject line concise
+- Add a body if the changes are complex
+- Use imperative mood
+- Don't add extra explanations or markdown
+
+Return ONLY the commit message (no quotes, no extra text):`, diff)
+
+	requestBody := map[string]interface{}{
+		"model": config.Model,
+		"messages": []map[string]string{
+			{"role": "system", "content": "You are a git commit message generator. Output only the commit message based on the provided diff."},
+			{"role": "user", "content": prompt},
+		},
+		"temperature": 0.3,
+		"max_tokens":  300,
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", err
+	}
+
+	apiCmd := exec.Command("curl", "-X", "POST",
+		"https://api.groq.com/openai/v1/chat/completions",
+		"-H", "Content-Type: application/json",
+		"-H", fmt.Sprintf("Authorization: Bearer %s", config.GroqAPIKey),
+		"-d", string(jsonBody))
+
+	var apiOut bytes.Buffer
+	var stderr bytes.Buffer
+	apiCmd.Stdout = &apiOut
+	apiCmd.Stderr = &stderr
+
+	err = apiCmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("API call failed: %v\n%s", err, stderr.String())
+	}
+
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(apiOut.Bytes(), &response); err != nil {
+		return "", fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	if len(response.Choices) == 0 {
+		return "", fmt.Errorf("no response from API")
+	}
+
+	generated := strings.TrimSpace(response.Choices[0].Message.Content)
+	generated = strings.Trim(generated, "\"'")
+
+	return generated, nil
+}
 func InstallGlobalHook() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -365,6 +455,7 @@ func main() {
 		showConfig   = flag.Bool("show-config", false, "Show current configuration")
 		install      = flag.Bool("install", false, "Install global git hook")
 		installRepo  = flag.String("install-repo", "", "Install hook in specific repository (provide path)")
+		generate     = flag.Bool("generate", false, "Generate commit message from staged changes")
 	)
 	flag.Parse()
 
@@ -441,6 +532,29 @@ func main() {
 		fmt.Printf("   %s\n", enhanced)
 		fmt.Println("\nTIP: Use this message? Copy it above or run:")
 		fmt.Printf("   git commit -m \"%s\"\n", enhanced)
+		return
+	}
+
+	if *generate {
+		config, err := LoadConfig()
+		if err != nil {
+			fmt.Printf("[ERR] Error loading config: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("[AI] Analyzing staged changes and generating commit message...")
+		generated, err := GenerateFromDiff(config)
+		if err != nil {
+			fmt.Printf("[ERR] Generation failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("\nGENERATED MESSAGE:")
+		fmt.Println("--------------------------------------------------")
+		fmt.Println(generated)
+		fmt.Println("--------------------------------------------------")
+		fmt.Println("\nTIP: Use this message? Copy it above or run:")
+		fmt.Printf("   git commit -m \"%s\"\n", generated)
 		return
 	}
 
