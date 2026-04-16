@@ -1,24 +1,24 @@
 # install.ps1 - Run this in PowerShell as Administrator
 
-Write-Host "🚀 Installing Commit Assistant with AI Enhancement" -ForegroundColor Cyan
-Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "[INFO] Installing Commit Assistant with AI Enhancement" -ForegroundColor Cyan
+Write-Host "--------------------------------------------------" -ForegroundColor Cyan
 Write-Host ""
 
 # Check if Go is installed
 $goVersion = go version 2>$null
 if (-not $goVersion) {
-    Write-Host "❌ Go is not installed. Please install Go first." -ForegroundColor Red
-    Write-Host "   Download from: https://golang.org/dl/" -ForegroundColor Yellow
+    Write-Host "[FAIL] Go is not installed. Please install Go first." -ForegroundColor Red
+    Write-Host "       Download from: https://golang.org/dl/" -ForegroundColor Yellow
     exit 1
 }
-Write-Host "✅ Go detected: $goVersion" -ForegroundColor Green
+Write-Host "[INFO] Go detected: $goVersion" -ForegroundColor Green
 
 # Build the binary
-Write-Host "📦 Building commit-assistant..." -ForegroundColor Blue
+Write-Host "[INFO] Building commit-assistant..." -ForegroundColor Blue
 go build -o commit-assistant.exe main.go
 
 if (-not (Test-Path "commit-assistant.exe")) {
-    Write-Host "❌ Build failed!" -ForegroundColor Red
+    Write-Host "[FAIL] Build failed!" -ForegroundColor Red
     exit 1
 }
 
@@ -29,20 +29,20 @@ if (-not (Test-Path $installDir)) {
 }
 
 # Move binary
-Write-Host "📁 Installing to $installDir..." -ForegroundColor Blue
+Write-Host "[INFO] Installing to $installDir..." -ForegroundColor Blue
 Move-Item -Force "commit-assistant.exe" "$installDir\" -ErrorAction SilentlyContinue
 
 # Add to PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$installDir*") {
-    Write-Host "🔧 Adding to PATH..." -ForegroundColor Blue
+    Write-Host "[INFO] Adding to PATH..." -ForegroundColor Blue
     [Environment]::SetEnvironmentVariable("Path", "$userPath;$installDir", "User")
     $env:Path += ";$installDir"
-    Write-Host "✅ Added to PATH. Please restart your terminal after installation." -ForegroundColor Yellow
+    Write-Host "[DONE] Added to PATH. Please restart your terminal after installation." -ForegroundColor Yellow
 }
 
 # Install global git hook for Windows
-Write-Host "🔧 Installing global git hook..." -ForegroundColor Blue
+Write-Host "[INFO] Installing global git hook..." -ForegroundColor Blue
 
 $homeDir = $env:USERPROFILE
 $templateDir = "$homeDir\.git-templates"
@@ -69,8 +69,8 @@ fi
 
 if [ `$? -ne 0 ]; then
     echo ""
-    echo "💡 Want AI to improve your message? Run: commit-assistant --improve `"your message`""
-    echo "   Or set your Groq API key: commit-assistant --config-api-key YOUR_KEY"
+    echo "TIP: Want AI to improve your message? Run: commit-assistant --improve `"your message`""
+    echo "     Or set your Groq API key: commit-assistant --config-api-key YOUR_KEY"
     exit 1
 fi
 
@@ -83,36 +83,36 @@ $hookContent | Out-File -FilePath $hookPath -Encoding UTF8 -Force
 # Set git config
 git config --global init.templatedir "$templateDir"
 
-Write-Host "✅ Global hook installed!" -ForegroundColor Green
-Write-Host "📌 Note: For existing repos, run 'git init' in each repo to activate" -ForegroundColor Yellow
+Write-Host "[DONE] Global hook installed!" -ForegroundColor Green
+Write-Host "NOTE: For existing repos, run 'git init' in each repo to activate" -ForegroundColor Yellow
 
 # Initialize config
-Write-Host "⚙️  Initializing configuration..." -ForegroundColor Blue
+Write-Host "[INFO] Initializing configuration..." -ForegroundColor Blue
 & "$installDir\commit-assistant.exe" --show-config 2>$null | Out-Null
 
 Write-Host ""
-Write-Host "✅ Installation complete!" -ForegroundColor Green
+Write-Host "[DONE] Installation complete!" -ForegroundColor Green
 Write-Host ""
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-Write-Host "🚀 Next Steps:" -ForegroundColor Cyan
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
+Write-Host "--------------------------------------------------" -ForegroundColor Cyan
+Write-Host "NEXT STEPS:" -ForegroundColor Cyan
+Write-Host "--------------------------------------------------" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "1️⃣  Get your Groq API key:" -ForegroundColor White
+Write-Host "1. Get your Groq API key:" -ForegroundColor White
 Write-Host "   https://console.groq.com/keys" -ForegroundColor Blue
 Write-Host ""
-Write-Host "2️⃣  Configure your API key:" -ForegroundColor White
+Write-Host "2. Configure your API key:" -ForegroundColor White
 Write-Host "   commit-assistant --config-api-key YOUR_API_KEY" -ForegroundColor Green
 Write-Host ""
-Write-Host "3️⃣  Test the linter:" -ForegroundColor White
+Write-Host "3. Test the linter:" -ForegroundColor White
 Write-Host "   git commit -m `"bad message`" --allow-empty" -ForegroundColor Green
 Write-Host ""
-Write-Host "4️⃣  Try AI enhancement:" -ForegroundColor White
+Write-Host "4. Try AI enhancement:" -ForegroundColor White
 Write-Host "   commit-assistant --improve `"fixed bug`"" -ForegroundColor Green
 Write-Host ""
-Write-Host "5️⃣  View your config:" -ForegroundColor White
+Write-Host "5. View your config:" -ForegroundColor White
 Write-Host "   commit-assistant --show-config" -ForegroundColor Green
 Write-Host ""
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-Write-Host "💡 IMPORTANT: Restart your terminal or run:" -ForegroundColor Yellow
+Write-Host "--------------------------------------------------" -ForegroundColor Cyan
+Write-Host "IMPORTANT: Restart your terminal or run:" -ForegroundColor Yellow
 Write-Host "   `$env:Path = [System.Environment]::GetEnvironmentVariable(`"Path`",`"User`")" -ForegroundColor Yellow
 Write-Host ""

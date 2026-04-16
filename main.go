@@ -301,7 +301,7 @@ exit 0
 	}
 
 	// Reinitializehooks in existing repos (optional)
-	fmt.Println("✅ Global hook installed!")
+	fmt.Println("[DONE] Global hook installed successfully")
 	return nil
 }
 
@@ -352,7 +352,7 @@ exit 0
 		return err
 	}
 
-	fmt.Printf("✅ Hook installed in: %s\n", absPath)
+	fmt.Printf("[DONE] Hook installed in: %s\n", absPath)
 	return nil
 }
 
@@ -371,50 +371,50 @@ func main() {
 	if *configAPIKey != "" {
 		config, err := LoadConfig()
 		if err != nil {
-			fmt.Printf("❌ Error loading config: %v\n", err)
+			fmt.Printf("[ERR] Error loading config: %v\n", err)
 			os.Exit(1)
 		}
 		config.GroqAPIKey = *configAPIKey
 		if err := SaveConfig(config); err != nil {
-			fmt.Printf("❌ Error saving config: %v\n", err)
+			fmt.Printf("[ERR] Error saving config: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("✅ API key saved successfully!")
+		fmt.Println("[DONE] API key saved successfully")
 		return
 	}
 
 	if *showConfig {
 		config, err := LoadConfig()
 		if err != nil {
-			fmt.Printf("❌ Error loading config: %v\n", err)
+			fmt.Printf("[ERR] Error loading config: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("\n📋 Current Configuration:")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Printf("🔑 API Key: %s\n", maskAPIKey(config.GroqAPIKey))
-		fmt.Printf("🤖 Model: %s\n", config.Model)
-		fmt.Printf("📏 Max Subject Length: %d\n", config.MaxSubjectLen)
-		fmt.Printf("📐 Max Body Line Length: %d\n", config.MaxBodyLineLen)
-		fmt.Printf("⚠️  Strict Mode: %v\n", config.StrictMode)
+		fmt.Println("\n--- CURRENT CONFIGURATION ---")
+		fmt.Println("--------------------------------------------------")
+		fmt.Printf("API Key:               %s\n", maskAPIKey(config.GroqAPIKey))
+		fmt.Printf("Model:                 %s\n", config.Model)
+		fmt.Printf("Max Subject Length:    %d\n", config.MaxSubjectLen)
+		fmt.Printf("Max Body Line Length:  %d\n", config.MaxBodyLineLen)
+		fmt.Printf("Strict Mode:           %v\n", config.StrictMode)
 		return
 	}
 
 	if *install {
 		if err := InstallGlobalHook(); err != nil {
-			fmt.Printf("❌ Installation failed: %v\n", err)
+			fmt.Printf("[ERR] Installation failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("\n🎉 Commit Assistant installed successfully!")
-		fmt.Println("\nNext steps:")
+		fmt.Println("\n[DONE] Commit Assistant installed successfully")
+		fmt.Println("\nNEXT STEPS:")
 		fmt.Println("1. Set your Groq API key:")
 		fmt.Println("   commit-assistant --config-api-key YOUR_API_KEY")
-		fmt.Println("2. Make a commit and watch it work!")
+		fmt.Println("2. Make a commit and watch it work")
 		return
 	}
 
 	if *installRepo != "" {
 		if err := InstallHookInRepo(*installRepo); err != nil {
-			fmt.Printf("❌ Installation failed: %v\n", err)
+			fmt.Printf("[ERR] Installation failed: %v\n", err)
 			os.Exit(1)
 		}
 		return
@@ -423,30 +423,30 @@ func main() {
 	if *improve != "" {
 		config, err := LoadConfig()
 		if err != nil {
-			fmt.Printf("❌ Error loading config: %v\n", err)
+			fmt.Printf("[ERR] Error loading config: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("🤖 Enhancing commit message with AI...")
+		fmt.Println("[AI] Enhancing commit message...")
 		enhanced, err := EnhanceWithAI(*improve, config)
 		if err != nil {
-			fmt.Printf("❌ AI enhancement failed: %v\n", err)
-			fmt.Println("\n💡 Tip: Make sure your Groq API key is set correctly")
+			fmt.Printf("[ERR] AI enhancement failed: %v\n", err)
+			fmt.Println("\nNOTE: Ensure your Groq API key is set correctly")
 			os.Exit(1)
 		}
 
-		fmt.Println("\n📝 Original message:")
+		fmt.Println("\nORIGINAL MESSAGE:")
 		fmt.Printf("   %s\n", *improve)
-		fmt.Println("\n✨ Improved message:")
+		fmt.Println("\nIMPROVED MESSAGE:")
 		fmt.Printf("   %s\n", enhanced)
-		fmt.Println("\n💡 Use this message? Copy it above or run:")
+		fmt.Println("\nTIP: Use this message? Copy it above or run:")
 		fmt.Printf("   git commit -m \"%s\"\n", enhanced)
 		return
 	}
 
 	config, err := LoadConfig()
 	if err != nil {
-		fmt.Printf("❌ Error loading config: %v\n", err)
+		fmt.Printf("[ERR] Error loading config: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -455,7 +455,7 @@ func main() {
 	if *filePath != "" {
 		data, err := os.ReadFile(*filePath)
 		if err != nil {
-			fmt.Printf("❌ Error reading file: %v\n", err)
+			fmt.Printf("[ERR] Error reading file: %v\n", err)
 			os.Exit(1)
 		}
 		commitMessage = string(data)
@@ -486,7 +486,7 @@ func main() {
 	commitMessage = FormatCommitMessage(commitMessage)
 	commitMessage = strings.TrimSpace(commitMessage)
 	if commitMessage == "" {
-		fmt.Println("❌ No commit message provided")
+		fmt.Println("[ERR] No commit message provided")
 		os.Exit(1)
 	}
 
@@ -494,48 +494,48 @@ func main() {
 
 	parsed, _ := ParseCommitMessage(commitMessage)
 
-	fmt.Println("\n📋 Commit Message Analysis:")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("\n--- COMMIT ANALYSIS ---")
+	fmt.Println("--------------------------------------------------")
 
 	if parsed.Type != "" {
-		fmt.Printf("📝 Type: %s\n", parsed.Type)
+		fmt.Printf("Type:        %s\n", parsed.Type)
 		if parsed.Scope != "" {
-			fmt.Printf("🎯 Scope: %s\n", parsed.Scope)
+			fmt.Printf("Scope:       %s\n", parsed.Scope)
 		}
 		if parsed.IsBreaking {
-			fmt.Println("⚠️  BREAKING CHANGE")
+			fmt.Println("BREAKING:    YES")
 		}
-		fmt.Printf("📄 Message: %s\n", parsed.Description)
+		fmt.Printf("Description: %s\n", parsed.Description)
 	}
 
-	fmt.Println("\n🔍 Validation Results:")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("\n--- VALIDATION RESULTS ---")
+	fmt.Println("--------------------------------------------------")
 
 	if len(result.Errors) > 0 {
-		fmt.Println("❌ Errors:")
+		fmt.Println("[FAIL] Errors:")
 		for _, err := range result.Errors {
-			fmt.Printf("   • %s\n", err)
+			fmt.Printf("   - %s\n", err)
 		}
 	}
 
 	if len(result.Warnings) > 0 {
-		fmt.Println("⚠️  Warnings:")
+		fmt.Println("[WARN] Warnings:")
 		for _, warn := range result.Warnings {
-			fmt.Printf("   • %s\n", warn)
+			fmt.Printf("   - %s\n", warn)
 		}
 	}
 
 	if result.Valid && len(result.Errors) == 0 {
-		fmt.Println("✅ Commit message is valid!")
+		fmt.Println("[PASS] Commit message is valid")
 	}
 
 	if !result.Valid && config.GroqAPIKey != "" {
-		fmt.Println("\n🤖 AI Suggestion:")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println("\n[ AI ] Suggestion:")
+		fmt.Println("--------------------------------------------------")
 		improved, err := EnhanceWithAI(commitMessage, config)
 		if err == nil {
-			fmt.Printf("💡 Try this format:\n   %s\n", improved)
-			fmt.Println("\n📌 To use this message:")
+			fmt.Printf("Format: %s\n", improved)
+			fmt.Println("\nTO USE THIS MESSAGE:")
 			fmt.Printf("   git commit -m \"%s\"\n", improved)
 		}
 	}
