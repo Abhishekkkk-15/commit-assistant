@@ -69,8 +69,8 @@ fi
 
 if [ `$? -ne 0 ]; then
     echo ""
-    echo "💡 Want AI to improve your message? Run: commit-assistant.exe --improve `"your message`""
-    echo "   Or set your Groq API key: commit-assistant.exe --config-api-key YOUR_KEY"
+    echo "💡 Want AI to improve your message? Run: commit-assistant --improve `"your message`""
+    echo "   Or set your Groq API key: commit-assistant --config-api-key YOUR_KEY"
     exit 1
 fi
 
@@ -101,16 +101,16 @@ Write-Host "1️⃣  Get your Groq API key:" -ForegroundColor White
 Write-Host "   https://console.groq.com/keys" -ForegroundColor Blue
 Write-Host ""
 Write-Host "2️⃣  Configure your API key:" -ForegroundColor White
-Write-Host "   commit-assistant.exe --config-api-key YOUR_API_KEY" -ForegroundColor Green
+Write-Host "   commit-assistant --config-api-key YOUR_API_KEY" -ForegroundColor Green
 Write-Host ""
 Write-Host "3️⃣  Test the linter:" -ForegroundColor White
 Write-Host "   git commit -m `"bad message`" --allow-empty" -ForegroundColor Green
 Write-Host ""
 Write-Host "4️⃣  Try AI enhancement:" -ForegroundColor White
-Write-Host "   commit-assistant.exe --improve `"fixed bug`"" -ForegroundColor Green
+Write-Host "   commit-assistant --improve `"fixed bug`"" -ForegroundColor Green
 Write-Host ""
 Write-Host "5️⃣  View your config:" -ForegroundColor White
-Write-Host "   commit-assistant.exe --show-config" -ForegroundColor Green
+Write-Host "   commit-assistant --show-config" -ForegroundColor Green
 Write-Host ""
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
 Write-Host "💡 IMPORTANT: Restart your terminal or run:" -ForegroundColor Yellow

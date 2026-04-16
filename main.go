@@ -18,7 +18,7 @@ type Config struct {
 	Model          string `json:"model"`
 	MaxSubjectLen  int    `json:"max_subject_length"`
 	MaxBodyLineLen int    `json:"max_body_line_length"`
-	StrictMode     bool   `josn:"strict_mode"`
+	StrictMode     bool   `json:"strict_mode"`
 }
 
 type CommitMessage struct {
@@ -140,7 +140,7 @@ func Lint(message string, config *Config) LintResult {
 			len(parsed.Subject), config.MaxSubjectLen))
 	}
 	allowedTypes := []string{"feat", "fix", "docs", "style", "refactor",
-		"test", "chore", "perf", "ci", "build", "revert", "ops "}
+		"test", "chore", "perf", "ci", "build", "revert", "ops"}
 	if parsed.Type == "" {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Must follow format: <type>(scope): <description>")
@@ -264,17 +264,17 @@ func InstallGlobalHook() error {
 COMMIT_MSG_FILE=$1
 
 # Run the linter
-%s --file "$COMMIT_MSG_FILE"
+"%s" --file "$COMMIT_MSG_FILE"
 
 if [ $? -ne 0 ]; then
     echo ""
-    echo "💡 Want AI to improve your message? Run: %s --improve \"your message\""
-    echo "   Or set your Groq API key: %s --config-api-key YOUR_KEY"
+    echo "💡 Want AI to improve your message? Run: commit-assistant --improve \"your message\""
+    echo "   Or set your Groq API key: commit-assistant --config-api-key YOUR_KEY"
     exit 1
 fi
 
 exit 0
-`, binaryPath, binaryPath, binaryPath)
+`, binaryPath)
 
 	hookPath := filepath.Join(hooksDir, "commit-msg")
 	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {

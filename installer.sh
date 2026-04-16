@@ -30,9 +30,16 @@ if ! command -v curl &> /dev/null; then
     exit 1
 fi
 
+# Set binary name based on OS
+if [[ "$OS" == "MINGW"* ]] || [[ "$OS" == "MSYS"* ]] || [[ "$OS" == "CYGWIN"* ]]; then
+    BINARY_NAME="commit-assistant.exe"
+else
+    BINARY_NAME="commit-assistant"
+fi
+
 # Build the binary
 echo -e "${BLUE}📦 Building commit-assistant...${NC}"
-go build -o commit-assistant.exe main.go
+go build -o "$BINARY_NAME" main.go
 
 # Determine installation path based on OS
 if [[ "$OS" == "MINGW"* ]] || [[ "$OS" == "MSYS"* ]] || [[ "$OS" == "CYGWIN"* ]]; then
@@ -52,14 +59,14 @@ fi
 
 # Move binary to install directory
 if [ -w "$INSTALL_DIR" ]; then
-    mv commit-assistant.exe "$INSTALL_DIR/" 2>/dev/null || sudo mv commit-assistant.exe "$INSTALL_DIR/" 2>/dev/null
-else
-    echo -e "${YELLOW}⚠️  Need permission to install to $INSTALL_DIR${NC}"
-    sudo mv commit-assistant.exe "$INSTALL_DIR/" 2>/dev/null || {
-        echo -e "${YELLOW}📁 Installing to user directory instead...${NC}"
-        INSTALL_DIR="$HOME/.local/bin"
-        mkdir -p "$INSTALL_DIR"
-        mv commit-assistant.exe "$INSTALL_DIR/"
+        mv "$BINARY_NAME" "$INSTALL_DIR/" 2>/dev/null || sudo mv "$BINARY_NAME" "$INSTALL_DIR/" 2>/dev/null
+    else
+        echo -e "${YELLOW}⚠️  Need permission to install to $INSTALL_DIR${NC}"
+        sudo mv "$BINARY_NAME" "$INSTALL_DIR/" 2>/dev/null || {
+            echo -e "${YELLOW}📁 Installing to user directory instead...${NC}"
+            INSTALL_DIR="$HOME/.local/bin"
+            mkdir -p "$INSTALL_DIR"
+            mv "$BINARY_NAME" "$INSTALL_DIR/"
         
         # Add to PATH if not already there
         if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -71,12 +78,12 @@ else
 fi
 
 # Verify installation
-if command -v commit-assistant.exe &> /dev/null; then
+if command -v "$BINARY_NAME" &> /dev/null; then
     echo -e "${GREEN}✅ Binary installed successfully${NC}"
 else
     echo -e "${YELLOW}⚠️  Binary installed but not in PATH. Using full path...${NC}"
     # Use full path for remaining commands
-    COMMIT_ASSISTANT="$INSTALL_DIR/commit-assistant.exe"
+    COMMIT_ASSISTANT="$INSTALL_DIR/$BINARY_NAME"
 fi
 
 # Install global git hook
@@ -92,7 +99,7 @@ if [[ "$OS" == "MINGW"* ]] || [[ "$OS" == "MSYS"* ]]; then
     mkdir -p "$HOOKS_DIR"
     
     # Get absolute path of the binary
-    BINARY_PATH=$(which commit-assistant.exe 2>/dev/null || echo "$INSTALL_DIR/commit-assistant.exe")
+    BINARY_PATH=$(which "$BINARY_NAME" 2>/dev/null || echo "$INSTALL_DIR/$BINARY_NAME")
     BINARY_PATH=$(cd "$(dirname "$BINARY_PATH")" && pwd)/$(basename "$BINARY_PATH")
     
     # Create hook script for Windows/Git Bash
@@ -107,8 +114,8 @@ COMMIT_MSG_FILE=\$1
 
 if [ \$? -ne 0 ]; then
     echo ""
-    echo "💡 Want AI to improve your message? Run: commit-assistant.exe --improve \"your message\""
-    echo "   Or set your Groq API key: commit-assistant.exe --config-api-key YOUR_KEY"
+    echo "💡 Want AI to improve your message? Run: commit-assistant --improve \"your message\""
+    echo "   Or set your Groq API key: commit-assistant --config-api-key YOUR_KEY"
     exit 1
 fi
 
@@ -129,7 +136,7 @@ fi
 
 # Create config directory
 echo -e "${BLUE}⚙️  Initializing configuration...${NC}"
-"$INSTALL_DIR/commit-assistant.exe" --show-config &> /dev/null || true
+"$INSTALL_DIR/$BINARY_NAME" --show-config &> /dev/null || true
 
 echo ""
 echo -e "${GREEN}✅ Installation complete!${NC}"
@@ -142,16 +149,16 @@ echo "1️⃣  Get your Groq API key:"
 echo -e "   ${BLUE}https://console.groq.com/keys${NC}"
 echo ""
 echo "2️⃣  Configure your API key:"
-echo -e "   ${GREEN}commit-assistant.exe --config-api-key YOUR_API_KEY${NC}"
+echo -e "   ${GREEN}commit-assistant --config-api-key YOUR_API_KEY${NC}"
 echo ""
 echo "3️⃣  Test the linter:"
 echo -e "   ${GREEN}git commit -m \"bad message\" --allow-empty${NC}"
 echo ""
 echo "4️⃣  Try AI enhancement:"
-echo -e "   ${GREEN}commit-assistant.exe --improve \"fixed bug\"${NC}"
+echo -e "   ${GREEN}commit-assistant --improve \"fixed bug\"${NC}"
 echo ""
 echo "5️⃣  View your config:"
-echo -e "   ${GREEN}commit-assistant.exe --show-config${NC}"
+echo -e "   ${GREEN}commit-assistant --show-config${NC}"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "${BLUE}💡 Pro tip:${NC} Restart your terminal or run 'source ~/.bashrc'"
