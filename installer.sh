@@ -39,7 +39,7 @@ fi
 
 # Build the binary
 echo -e "${BLUE}[INFO] Building commit-assistant...${NC}"
-go build -o "$BINARY_NAME" main.go
+go build -o "$BINARY_NAME" .
 
 # Determine installation path based on OS
 if [[ "$OS" == "MINGW"* ]] || [[ "$OS" == "MSYS"* ]] || [[ "$OS" == "CYGWIN"* ]]; then

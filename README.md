@@ -8,12 +8,11 @@
 
 ---
 
-## ✨ Key Features
-
 - **🛡️ Intelligent Linting**: Automatically validates commit messages against strict Conventional Commits standards.
-- **🤖 AI Enhancement**: Seamless integration with **Groq AI** to suggest professional commit messages from brief descriptions.
+- **🤖 AI Multi-Provider**: Seamless integration with **Groq AI**, **Ollama**, **OpenAI**, or any OpenAI-compatible API.
+- **✨ Enhanced Generation**: Analyze staged changes with contextual awareness (branch name, file list) and choose from multiple AI-generated options.
 - **🔗 Global Git Hook**: Install once and enjoy automated linting across all your local repositories.
-- **⚙️ Deep Configuration**: Customize subject length, body line width, strict mode, and more.
+- **⚙️ Deep Configuration**: Customize subject length, body line width, strict mode, allowed types, AI model, and base URL.
 - **💻 Cross-Platform**: Native installers for Windows (PowerShell) and Unix/macOS (Bash).
 
 ---
@@ -21,12 +20,16 @@
 ## 🚀 Quick Start
 
 1. **Install**: Run the installer script for your OS (see [Installation](#-installation)).
-2. **API Key**: Get your free Groq API key from the [Groq Console](https://console.groq.com/keys).
-3. **Configure**: 
+2. **Configure**: 
    ```bash
-   commit-assistant --config-api-key YOUR_GROQ_API_KEY
+   # Set your API Key (Groq, OpenAI, etc.)
+   commit-assistant --config-api-key YOUR_API_KEY
+
+   # (Optional) Set a custom model and base URL
+   commit-assistant --config-model llama-3.3-70b-versatile
+   commit-assistant --config-base-url https://api.groq.com/openai/v1
    ```
-4. **Commit**: Start committing!
+3. **Commit**: Start committing!
    ```bash
    git commit -m "feat: add ai powered linting"
    ```
@@ -51,7 +54,7 @@ chmod +x installer.sh
 ### Manual Build (Go)
 If you have Go installed, you can build it from source:
 ```bash
-go build -o commit-assistant main.go
+go build -o commit-assistant .
 ```
 
 ---
@@ -63,13 +66,16 @@ go build -o commit-assistant main.go
 | Flag | Description |
 | :--- | :--- |
 | `--install` | Installs the global git hook to your `~/.git-templates`. |
-| `--config-api-key <key>` | Securely saves your Groq API key to your local config. |
+| `--config-api-key <key>` | Securely saves your AI API key. |
+| `--config-model <model>` | Sets the AI model to use (e.g., `gpt-4`). |
+| `--config-base-url <url>` | Sets the API base URL (OpenAI compatible). |
 | `--improve "<msg>"` | Asks the AI to format a raw message into Conventional Commits. |
-| `--show-config` | Displays your current settings (API key is partially masked). |
+| `--show-config` | Displays your current settings. |
 | `--message "<msg>"` | Manually lint a specific message string. |
 | `--file <path>` | Lint a commit message from a file (used by git hooks). |
-| `--install-repo <path>` | Install the hook in a specific repository path. |
-| `--generate` | Generate a commit message from staged changes using AI. |
+| `--generate` | Generate commit message options from staged changes. |
+| `--commit` | Use with `--generate` to commit immediately after selection. |
+| `--hint "<hint>"` | Provide a hint to guide the AI generator (e.g., `--hint "refactor"`). |
 
 ### Git Hook Integration
 Once installed, the global hook triggers on every `git commit`. 
@@ -80,14 +86,17 @@ Once installed, the global hook triggers on every `git commit`.
 
 ## ⚙️ Configuration
 
-Settings are stored in `~/.commit-assistant/config.json`.
+Settings are stored in `~/.commit-assistant/config.json`. You can also use environment variables like `AI_API_KEY`, `AI_BASE_URL`, and `AI_MODEL`.
 
 | Setting | Default | Description |
 | :--- | :--- | :--- |
-| `model` | `openai/gpt-oss-120b` | The AI model used for suggestions. |
-| `max_subject_length` | `120` | Maximum character count for the subject line. |
-| `max_body_line_length` | `240` | Maximum character count per line in the body. |
+| `api_key` | `""` | Your AI provider API key. |
+| `base_url` | `https://api.groq.com/openai/v1` | OpenAI-compatible base URL. |
+| `model` | `llama-3.3-70b-versatile` | The AI model used for suggestions. |
+| `max_subject_length` | `72` | Maximum character count for the subject line. |
+| `max_body_line_length` | `72` | Maximum character count per line in the body. |
 | `strict_mode` | `false` | If true, warnings will also reject the commit. |
+| `allowed_types` | `[...]` | List of allowed conventional commit types. |
 
 ---
 

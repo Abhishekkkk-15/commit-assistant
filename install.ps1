@@ -15,7 +15,7 @@ Write-Host "[INFO] Go detected: $goVersion" -ForegroundColor Green
 
 # Build the binary
 Write-Host "[INFO] Building commit-assistant..." -ForegroundColor Blue
-go build -o commit-assistant.exe main.go
+go build -o commit-assistant.exe .
 
 if (-not (Test-Path "commit-assistant.exe")) {
     Write-Host "[FAIL] Build failed!" -ForegroundColor Red

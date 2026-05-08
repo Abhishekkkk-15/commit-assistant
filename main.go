@@ -6,19 +6,26 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
+const Version = "2.0.0"
+
 type Config struct {
-	GroqAPIKey     string `json:"groq_api_key"`
-	Model          string `json:"model"`
-	MaxSubjectLen  int    `json:"max_subject_length"`
-	MaxBodyLineLen int    `json:"max_body_line_length"`
-	StrictMode     bool   `json:"strict_mode"`
+	APIKey         string   `json:"api_key"`
+	BaseURL        string   `json:"base_url"`
+	Model          string   `json:"model"`
+	MaxSubjectLen  int      `json:"max_subject_length"`
+	MaxBodyLineLen int      `json:"max_body_line_length"`
+	StrictMode     bool     `json:"strict_mode"`
+	AllowedTypes   []string `json:"allowed_types"`
 }
 
 type CommitMessage struct {
@@ -37,10 +44,16 @@ type LintResult struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Model:          "openai/gpt-oss-120b",
-		MaxSubjectLen:  120,
-		MaxBodyLineLen: 240,
+		BaseURL:        "https://api.groq.com/openai/v1",
+		Model:          "llama-3.3-70b-versatile",
+		MaxSubjectLen:  72,
+		MaxBodyLineLen: 72,
 		StrictMode:     false,
+		AllowedTypes: []string{
+			"feat", "fix", "docs", "style", "refactor",
+			"perf", "test", "chore", "build", "ci",
+			"revert", "style", "ops",
+		},
 	}
 }
 
@@ -49,21 +62,72 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	var config Config
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			defaultConfig := DefaultConfig()
-			saveErr := SaveConfig(&defaultConfig)
-			if saveErr != nil {
-				return nil, saveErr
-			}
-			return &defaultConfig, nil
+			config = DefaultConfig()
+		} else {
+			return nil, err
 		}
-		return nil, err
+	} else {
+		err = json.Unmarshal(data, &config)
+		if err != nil {
+			return nil, err
+		}
 	}
-	var config Config
-	err = json.Unmarshal(data, &config)
-	return &config, err
+
+	// Environment variable overrides
+	if envKey := os.Getenv("GROQ_API_KEY"); envKey != "" {
+		config.APIKey = envKey
+	}
+	if envKey := os.Getenv("AI_API_KEY"); envKey != "" {
+		config.APIKey = envKey
+	}
+	if envBase := os.Getenv("AI_BASE_URL"); envBase != "" {
+		config.BaseURL = envBase
+	}
+	if envModel := os.Getenv("AI_MODEL"); envModel != "" {
+		config.Model = envModel
+	}
+
+	// Project-specific config override
+	localConfigPath := ".commit-assistant.json"
+	if _, err := os.Stat(localConfigPath); err == nil {
+		localData, err := os.ReadFile(localConfigPath)
+		if err == nil {
+			var localConfig Config
+			if err := json.Unmarshal(localData, &localConfig); err == nil {
+				// Selective merge (only non-empty fields)
+				if localConfig.APIKey != "" {
+					config.APIKey = localConfig.APIKey
+				}
+				if localConfig.BaseURL != "" {
+					config.BaseURL = localConfig.BaseURL
+				}
+				if localConfig.Model != "" {
+					config.Model = localConfig.Model
+				}
+				if localConfig.MaxSubjectLen != 0 {
+					config.MaxSubjectLen = localConfig.MaxSubjectLen
+				}
+				if localConfig.MaxBodyLineLen != 0 {
+					config.MaxBodyLineLen = localConfig.MaxBodyLineLen
+				}
+				if len(localConfig.AllowedTypes) > 0 {
+					config.AllowedTypes = localConfig.AllowedTypes
+				}
+				config.StrictMode = localConfig.StrictMode
+			}
+		}
+	}
+
+	// Ensure AllowedTypes is never empty
+	if len(config.AllowedTypes) == 0 {
+		config.AllowedTypes = []string{"feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert", "ops"}
+	}
+
+	return &config, nil
 }
 
 func SaveConfig(config *Config) error {
@@ -91,10 +155,11 @@ func getConfigPath() (string, error) {
 }
 
 func ParseCommitMessage(raw string) (*CommitMessage, error) {
-	lines := strings.Split(strings.TrimSpace(raw), "\n")
-	if len(lines) == 0 {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
 		return nil, fmt.Errorf("empty commit message")
 	}
+	lines := strings.Split(trimmed, "\n")
 	subject := strings.TrimSpace(lines[0])
 	body := ""
 	if len(lines) > 1 {
@@ -153,14 +218,12 @@ func Lint(message string, config *Config) LintResult {
 		result.Errors = append(result.Errors, fmt.Sprintf("Subject length %d exceeds limit %d",
 			len(parsed.Subject), config.MaxSubjectLen))
 	}
-	allowedTypes := []string{"feat", "fix", "docs", "style", "refactor",
-		"test", "chore", "perf", "ci", "build", "revert", "ops"}
 	if parsed.Type == "" {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Must follow format: <type>(scope): <description>")
 	} else {
 		validType := false
-		for _, t := range allowedTypes {
+		for _, t := range config.AllowedTypes {
 			if t == parsed.Type {
 				validType = true
 				break
@@ -168,7 +231,7 @@ func Lint(message string, config *Config) LintResult {
 		}
 		if !validType {
 			result.Valid = false
-			result.Errors = append(result.Errors, fmt.Sprintf("Invalid type '%s'. Allowed: %s", parsed.Type, strings.Join(allowedTypes, ", ")))
+			result.Errors = append(result.Errors, fmt.Sprintf("Invalid type '%s'. Allowed: %s", parsed.Type, strings.Join(config.AllowedTypes, ", ")))
 		}
 	}
 	if parsed.Body != "" {
@@ -183,33 +246,19 @@ func Lint(message string, config *Config) LintResult {
 	return result
 }
 
-func EnhanceWithAI(originalMessage string, config *Config) (string, error) {
-	if config.GroqAPIKey == "" {
-		return "", fmt.Errorf("Groq API key not configured. Run: commit-assistant --config-api-key YOUR_KEY")
+func CallAI(prompt string, systemPrompt string, config *Config, maxTokens int) (string, error) {
+	if config.APIKey == "" {
+		return "", fmt.Errorf("API key not configured. Run: commit-assistant --config-api-key YOUR_KEY")
 	}
-
-	prompt := fmt.Sprintf(`You are a git commit message expert. Improve this commit message following Conventional Commits format.
-
-Original: "%s"
-
-Rules:
-- Format: <type>(scope): <description>
-- Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build
-- Keep it concise (<72 chars for subject)
-- Add body if needed for explanation
-- Use imperative mood
-- Don't add extra explanations or markdown
-
-Return ONLY the improved commit message (no quotes, no extra text):`, originalMessage)
 
 	requestBody := map[string]interface{}{
 		"model": config.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": "You are a git commit message formatter. Output only the commit message."},
+		"messages": []map[string]interface{}{
+			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.3,
-		"max_tokens":  150,
+		"max_tokens":  maxTokens,
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
@@ -217,23 +266,28 @@ Return ONLY the improved commit message (no quotes, no extra text):`, originalMe
 		return "", err
 	}
 
-	cmd := exec.Command("curl", "-X", "POST",
-		"https://api.groq.com/openai/v1/chat/completions",
-		"-H", "Content-Type: application/json",
-		"-H", fmt.Sprintf("Authorization: Bearer %s", config.GroqAPIKey),
-		"-d", string(jsonBody))
-
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
+	url := strings.TrimSuffix(config.BaseURL, "/") + "/chat/completions"
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return "", fmt.Errorf("API call failed: %v\n%s", err, stderr.String())
+		return "", err
 	}
 
-	var response struct {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("API request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
@@ -241,25 +295,185 @@ Return ONLY the improved commit message (no quotes, no extra text):`, originalMe
 		} `json:"choices"`
 	}
 
-	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
-		return "", fmt.Errorf("failed to parse response: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	if len(response.Choices) == 0 {
-		return "", fmt.Errorf("no response from API")
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("no response choices from AI")
 	}
 
-	enhanced := strings.TrimSpace(response.Choices[0].Message.Content)
-	enhanced = strings.Trim(enhanced, "\"'")
-
-	return enhanced, nil
+	return strings.TrimSpace(result.Choices[0].Message.Content), nil
 }
 
-func GenerateFromDiff(config *Config) (string, error) {
-	if config.GroqAPIKey == "" {
-		return "", fmt.Errorf("Groq API key not configured. Run: commit-assistant --config-api-key YOUR_KEY")
+func EnhanceWithAI(originalMessage string, config *Config) (string, error) {
+	prompt := fmt.Sprintf(`You are a git commit message expert. Improve this commit message following Conventional Commits format.
+
+Original: "%s"
+
+Rules:
+- Format: <type>(scope): <description>
+- Types: %s
+- Keep it concise (<%d chars for subject)
+- Add body if needed for explanation
+- Use imperative mood
+- Don't add extra explanations or markdown
+
+Return ONLY the improved commit message (no quotes, no extra text):`,
+		originalMessage, strings.Join(config.AllowedTypes, ", "), config.MaxSubjectLen)
+
+	systemPrompt := "You are a git commit message formatter. Output only the commit message."
+	enhanced, err := CallAI(prompt, systemPrompt, config, 150)
+	if err != nil {
+		return "", err
+	}
+	return strings.Trim(enhanced, "\"'"), nil
+}
+
+func GetGitContext() (string, string, string) {
+	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	branchOut, _ := branchCmd.Output()
+	branch := strings.TrimSpace(string(branchOut))
+
+	filesCmd := exec.Command("git", "diff", "--cached", "--name-only")
+	filesOut, _ := filesCmd.Output()
+	files := strings.TrimSpace(string(filesOut))
+
+	historyCmd := exec.Command("git", "log", "-n", "5", "--pretty=format:%s")
+	historyOut, _ := historyCmd.Output()
+	history := strings.TrimSpace(string(historyOut))
+
+	return branch, files, history
+}
+
+func ExtractTicket(branch string) string {
+	re := regexp.MustCompile(`([A-Z]+-\d+)`)
+	match := re.FindString(branch)
+	return match
+}
+
+func Spinner(message string, done chan bool) {
+	chars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	i := 0
+	for {
+		select {
+		case <-done:
+			fmt.Printf("\r\033[K") // Clear line
+			return
+		default:
+			fmt.Printf("\r\033[36m%s\033[0m %s", chars[i], message)
+			i = (i + 1) % len(chars)
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
+func GenerateFromDiff(config *Config, count int, hint string) ([]string, error) {
+	cmd := exec.Command("git", "diff", "--cached")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("failed to get git diff: %v", err)
 	}
 
+	diff := strings.TrimSpace(out.String())
+	if diff == "" {
+		return nil, fmt.Errorf("no changes staged. Run 'git add' to stage changes first")
+	}
+
+	if len(diff) > 10000 {
+		diff = diff[:10000] + "\n... (diff truncated)"
+	}
+
+	branch, files, history := GetGitContext()
+	ticket := ExtractTicket(branch)
+
+	hintText := ""
+	if hint != "" {
+		hintText = fmt.Sprintf("\nUser Hint: %s\n", hint)
+	}
+
+	prompt := fmt.Sprintf(`Analyze the following git diff and generate %d professional commit message(s) following Conventional Commits format.
+
+Branch: %s
+Ticket: %s
+Modified Files:
+%s
+
+Recent Commit History (for style matching):
+%s
+
+Special Instructions:
+- If binary files or images are modified, describe their likely purpose based on file names and locations.
+- Focus on the *intent* of the changes.
+%s
+Diff:
+"%s"
+
+Rules:
+- Format: <type>(scope): <description>
+- Types: %s
+- Keep the subject line concise
+- Add a body if the changes are complex
+- Use imperative mood
+- Don't add extra explanations or markdown
+- If generating multiple options, you MUST separate each complete option with the literal string: @@@
+- Each option should start with a Conventional Commits type.
+
+Return ONLY the commit message(s):`, count, branch, ticket, files, history, hintText, diff, strings.Join(config.AllowedTypes, ", "))
+
+	systemPrompt := "You are a git commit message generator. Output only the commit message(s) based on the provided diff."
+
+	done := make(chan bool)
+	go Spinner("AI is analyzing your changes...", done)
+
+	raw, err := CallAI(prompt, systemPrompt, config, 500)
+	done <- true
+
+	if err != nil {
+		return nil, err
+	}
+
+	var options []string
+
+	// Try multiple separators for robustness
+	raw = strings.ReplaceAll(raw, "===SEP===", "@@@")
+	parts := strings.Split(raw, "@@@")
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		p = strings.Trim(p, "\"'")
+		// Remove AI numbering if present (e.g., "1. ", "[1] ")
+		p = regexp.MustCompile(`^\[?\d+\]?\.?\s*`).ReplaceAllString(p, "")
+		if p != "" {
+			options = append(options, p)
+		}
+	}
+
+	// Fallback: If still only one option but it looks like multiple lines
+	if len(options) == 1 && count > 1 {
+		// Look for common patterns like multiple "feat:" or "fix:" at start of lines
+		typePattern := fmt.Sprintf(`(?m)^(%s)(\(.*\))?!?:\s`, strings.Join(config.AllowedTypes, "|"))
+		re := regexp.MustCompile(typePattern)
+		indices := re.FindAllStringIndex(options[0], -1)
+		if len(indices) > 1 {
+			var newOptions []string
+			for i := 0; i < len(indices); i++ {
+				start := indices[i][0]
+				end := len(options[0])
+				if i+1 < len(indices) {
+					end = indices[i+1][0]
+				}
+				newOptions = append(newOptions, strings.TrimSpace(options[0][start:end]))
+			}
+			options = newOptions
+		}
+	}
+
+	return options, nil
+}
+
+func ReviewDiff(config *Config) (string, error) {
 	cmd := exec.Command("git", "diff", "--cached")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -269,80 +483,62 @@ func GenerateFromDiff(config *Config) (string, error) {
 
 	diff := strings.TrimSpace(out.String())
 	if diff == "" {
-		return "", fmt.Errorf("no changes staged. Run 'git add' to stage changes first")
+		return "", fmt.Errorf("no changes staged for review")
 	}
 
-	// Truncate diff if it's too large (safety measure for token limits)
-	if len(diff) > 10000 {
-		diff = diff[:10000] + "\n... (diff truncated)"
-	}
-
-	prompt := fmt.Sprintf(`Analyze the following git diff and generate a professional commit message following Conventional Commits format.
+	prompt := fmt.Sprintf(`Review the following git diff for security vulnerabilities, code smells, and optimization opportunities.
+Provide a concise list of suggestions (max 5) or say "LGTM" if the code looks excellent.
 
 Diff:
 "%s"
 
-Rules:
-- Format: <type>(scope): <description>
-- Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build
-- Keep the subject line concise
-- Add a body if the changes are complex
-- Use imperative mood
-- Don't add extra explanations or markdown
+Format:
+- [TYPE] Suggestion description`, diff)
 
-Return ONLY the commit message (no quotes, no extra text):`, diff)
+	systemPrompt := "You are a senior software engineer and security auditor. Provide a concise code review."
 
-	requestBody := map[string]interface{}{
-		"model": config.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": "You are a git commit message generator. Output only the commit message based on the provided diff."},
-			{"role": "user", "content": prompt},
-		},
-		"temperature": 0.3,
-		"max_tokens":  300,
+	done := make(chan bool)
+	go Spinner("AI is reviewing your code...", done)
+	review, err := CallAI(prompt, systemPrompt, config, 500)
+	done <- true
+
+	return review, err
+}
+
+func GenerateCompletion(shell string) string {
+	switch shell {
+	case "bash":
+		return `_commit_assistant_completions() {
+    local cur opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    opts="--file --message --improve --config-api-key --config-model --config-base-url --show-config --install --generate --commit --hint --review --version --completion"
+    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+}
+complete -F _commit_assistant_completions commit-assistant`
+	case "zsh":
+		return `#compdef commit-assistant
+_commit_assistant() {
+    _arguments \
+        '--file[Commit message file to lint]' \
+        '--message[Commit message to lint directly]' \
+        '--improve[Improve a commit message using AI]' \
+        '--config-api-key[Set your AI API key]' \
+        '--config-model[Set the AI model to use]' \
+        '--config-base-url[Set the AI base URL]' \
+        '--show-config[Show current configuration]' \
+        '--install[Install global git hook]' \
+        '--generate[Generate commit message from staged changes]' \
+        '--commit[Automatically commit after generating]' \
+        '--hint[Provide a hint to the AI generator]' \
+        '--review[Perform a micro code review]' \
+        '--version[Show version]' \
+        '--completion[Generate completion script]'
+}
+_commit_assistant "$@"`
+	default:
+		return "Shell not supported for completion"
 	}
-
-	jsonBody, err := json.Marshal(requestBody)
-	if err != nil {
-		return "", err
-	}
-
-	apiCmd := exec.Command("curl", "-X", "POST",
-		"https://api.groq.com/openai/v1/chat/completions",
-		"-H", "Content-Type: application/json",
-		"-H", fmt.Sprintf("Authorization: Bearer %s", config.GroqAPIKey),
-		"-d", string(jsonBody))
-
-	var apiOut bytes.Buffer
-	var stderr bytes.Buffer
-	apiCmd.Stdout = &apiOut
-	apiCmd.Stderr = &stderr
-
-	err = apiCmd.Run()
-	if err != nil {
-		return "", fmt.Errorf("API call failed: %v\n%s", err, stderr.String())
-	}
-
-	var response struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.Unmarshal(apiOut.Bytes(), &response); err != nil {
-		return "", fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	if len(response.Choices) == 0 {
-		return "", fmt.Errorf("no response from API")
-	}
-
-	generated := strings.TrimSpace(response.Choices[0].Message.Content)
-	generated = strings.Trim(generated, "\"'")
-
-	return generated, nil
 }
 func InstallGlobalHook() error {
 	home, err := os.UserHomeDir()
@@ -448,58 +644,86 @@ exit 0
 
 func main() {
 	var (
-		filePath     = flag.String("file", "", "Commit message file to lint")
-		message      = flag.String("message", "", "Commit message to lint directly")
-		improve      = flag.String("improve", "", "Improve a commit message using AI")
-		configAPIKey = flag.String("config-api-key", "", "Set your Groq API key")
-		showConfig   = flag.Bool("show-config", false, "Show current configuration")
-		install      = flag.Bool("install", false, "Install global git hook")
-		installRepo  = flag.String("install-repo", "", "Install hook in specific repository (provide path)")
-		generate     = flag.Bool("generate", false, "Generate commit message from staged changes")
+		filePath      = flag.String("file", "", "Commit message file to lint")
+		message       = flag.String("message", "", "Commit message to lint directly")
+		improve       = flag.String("improve", "", "Improve a commit message using AI")
+		configAPIKey  = flag.String("config-api-key", "", "Set your AI API key")
+		configModel   = flag.String("config-model", "", "Set the AI model to use")
+		configBaseURL = flag.String("config-base-url", "", "Set the AI base URL")
+		showConfig    = flag.Bool("show-config", false, "Show current configuration")
+		install       = flag.Bool("install", false, "Install global git hook")
+		installRepo   = flag.String("install-repo", "", "Install hook in specific repository")
+		generate      = flag.Bool("generate", false, "Generate commit message from staged changes")
+		doCommit      = flag.Bool("commit", false, "Automatically commit after generating (use with --generate)")
+		hint          = flag.String("hint", "", "Provide a hint to the AI generator (use with --generate)")
+		review        = flag.Bool("review", false, "Perform a micro code review before committing")
+		showVersion   = flag.Bool("version", false, "Show version information")
+		completion    = flag.String("completion", "", "Generate shell completion script (bash/zsh)")
+		noTUI         = flag.Bool("no-tui", false, "Disable the interactive TUI")
 	)
 	flag.Parse()
 
-	if *configAPIKey != "" {
+	if *showVersion {
+		fmt.Printf("Commit Assistant \033[36mv%s\033[0m\n", Version)
+		return
+	}
+
+	if *completion != "" {
+		fmt.Println(GenerateCompletion(*completion))
+		return
+	}
+
+	if *configAPIKey != "" || *configModel != "" || *configBaseURL != "" {
 		config, err := LoadConfig()
 		if err != nil {
-			fmt.Printf("[ERR] Error loading config: %v\n", err)
+			fmt.Printf("\033[31m[ERR]\033[0m Error loading config: %v\n", err)
 			os.Exit(1)
 		}
-		config.GroqAPIKey = *configAPIKey
+		if *configAPIKey != "" {
+			config.APIKey = *configAPIKey
+		}
+		if *configModel != "" {
+			config.Model = *configModel
+		}
+		if *configBaseURL != "" {
+			config.BaseURL = *configBaseURL
+		}
 		if err := SaveConfig(config); err != nil {
-			fmt.Printf("[ERR] Error saving config: %v\n", err)
+			fmt.Printf("\033[31m[ERR]\033[0m Error saving config: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("[DONE] API key saved successfully")
+		fmt.Println("\033[32m[DONE]\033[0m Configuration updated successfully")
 		return
 	}
 
 	if *showConfig {
 		config, err := LoadConfig()
 		if err != nil {
-			fmt.Printf("[ERR] Error loading config: %v\n", err)
+			fmt.Printf("\033[31m[ERR]\033[0m Error loading config: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("\n--- CURRENT CONFIGURATION ---")
+		fmt.Println("\n\033[1;34m--- CURRENT CONFIGURATION ---\033[0m")
 		fmt.Println("--------------------------------------------------")
-		fmt.Printf("API Key:               %s\n", maskAPIKey(config.GroqAPIKey))
+		fmt.Printf("API Key:               %s\n", maskAPIKey(config.APIKey))
+		fmt.Printf("Base URL:              %s\n", config.BaseURL)
 		fmt.Printf("Model:                 %s\n", config.Model)
 		fmt.Printf("Max Subject Length:    %d\n", config.MaxSubjectLen)
 		fmt.Printf("Max Body Line Length:  %d\n", config.MaxBodyLineLen)
 		fmt.Printf("Strict Mode:           %v\n", config.StrictMode)
+		fmt.Printf("Allowed Types:         %s\n", strings.Join(config.AllowedTypes, ", "))
 		return
 	}
 
 	if *install {
 		if err := InstallGlobalHook(); err != nil {
-			fmt.Printf("[ERR] Installation failed: %v\n", err)
+			fmt.Printf("\033[31m[ERR]\033[0m Installation failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("\n[DONE] Commit Assistant installed successfully")
-		fmt.Println("\nNEXT STEPS:")
-		fmt.Println("1. Set your Groq API key:")
-		fmt.Println("   commit-assistant --config-api-key YOUR_API_KEY")
-		fmt.Println("2. Make a commit and watch it work")
+		fmt.Println("\n\033[32m[DONE]\033[0m Commit Assistant installed successfully")
+		fmt.Println("\n\033[1mNEXT STEPS:\033[0m")
+		fmt.Println("1. Set your API key: \033[36mcommit-assistant --config-api-key YOUR_KEY\033[0m")
+		fmt.Println("2. (Optional) Set model: \033[36mcommit-assistant --config-model llama-3.3-70b-versatile\033[0m")
+		fmt.Println("3. Make a commit and watch it work")
 		return
 	}
 
@@ -514,23 +738,22 @@ func main() {
 	if *improve != "" {
 		config, err := LoadConfig()
 		if err != nil {
-			fmt.Printf("[ERR] Error loading config: %v\n", err)
+			fmt.Printf("\033[31m[ERR]\033[0m Error loading config: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("[AI] Enhancing commit message...")
+		fmt.Println("\033[36m[AI]\033[0m Enhancing commit message...")
 		enhanced, err := EnhanceWithAI(*improve, config)
 		if err != nil {
-			fmt.Printf("[ERR] AI enhancement failed: %v\n", err)
-			fmt.Println("\nNOTE: Ensure your Groq API key is set correctly")
+			fmt.Printf("\033[31m[ERR]\033[0m AI enhancement failed: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("\nORIGINAL MESSAGE:")
+		fmt.Println("\n\033[1mORIGINAL MESSAGE:\033[0m")
 		fmt.Printf("   %s\n", *improve)
-		fmt.Println("\nIMPROVED MESSAGE:")
+		fmt.Println("\n\033[1;32mIMPROVED MESSAGE:\033[0m")
 		fmt.Printf("   %s\n", enhanced)
-		fmt.Println("\nTIP: Use this message? Copy it above or run:")
+		fmt.Println("\n\033[1mTIP:\033[0m Use this message? Copy it above or run:")
 		fmt.Printf("   git commit -m \"%s\"\n", enhanced)
 		return
 	}
@@ -538,24 +761,95 @@ func main() {
 	if *generate {
 		config, err := LoadConfig()
 		if err != nil {
-			fmt.Printf("[ERR] Error loading config: %v\n", err)
+			fmt.Printf("\033[31m[ERR]\033[0m Error loading config: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("[AI] Analyzing staged changes and generating commit message...")
-		generated, err := GenerateFromDiff(config)
+		options, err := GenerateFromDiff(config, 3, *hint)
 		if err != nil {
-			fmt.Printf("[ERR] Generation failed: %v\n", err)
+			fmt.Printf("\033[31m[ERR]\033[0m Generation failed: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("\nGENERATED MESSAGE:")
-		fmt.Println("--------------------------------------------------")
-		fmt.Println(generated)
-		fmt.Println("--------------------------------------------------")
-		fmt.Println("\nTIP: Use this message? Copy it above or run:")
-		fmt.Printf("   git commit -m \"%s\"\n", generated)
+		var selected string
+		if *noTUI {
+			fmt.Println("\n\033[1;34m--- AI GENERATED OPTIONS ---\033[0m")
+			for i, opt := range options {
+				// Only show first line in preview
+				firstLine := strings.Split(opt, "\n")[0]
+				fmt.Printf("\033[36m[%d]\033[0m %s\n", i+1, firstLine)
+			}
+			fmt.Println("--------------------------------------------------")
+			fmt.Printf("Select an option (1-%d) or 'q' to quit: ", len(options))
+			var input string
+			fmt.Scanln(&input)
+			if input == "q" {
+				return
+			}
+			var choice int
+			fmt.Sscanf(input, "%d", &choice)
+			if choice < 1 || choice > len(options) {
+				fmt.Println("\033[31mInvalid selection\033[0m")
+				return
+			}
+			selected = options[choice-1]
+		} else {
+			var err error
+			selected, err = RunTUI(options)
+			if err != nil {
+				fmt.Printf("\033[31m[ERR]\033[0m TUI failed: %v\n", err)
+				os.Exit(1)
+			}
+			if selected == "" {
+				return
+			}
+		}
+
+		fmt.Printf("\n\033[32mSelected:\033[0m %s\n", selected)
+
+		if *doCommit {
+			confirm := "y"
+			fmt.Print("Commit these changes? [Y/n]: ")
+			fmt.Scanln(&confirm)
+			if confirm == "" || strings.ToLower(confirm) == "y" {
+				cmd := exec.Command("git", "commit", "-m", selected)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					fmt.Printf("\033[31m[ERR]\033[0m Commit failed: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Println("\033[32m[DONE]\033[0m Changes committed successfully")
+			}
+		} else {
+			fmt.Println("\n\033[1mTIP:\033[0m To commit directly, use:")
+			fmt.Printf("   git commit -m \"%s\"\n", selected)
+		}
 		return
+	}
+
+	if *review {
+		config, err := LoadConfig()
+		if err != nil {
+			fmt.Printf("\033[31m[ERR]\033[0m Error loading config: %v\n", err)
+			os.Exit(1)
+		}
+
+		reviewText, err := ReviewDiff(config)
+		if err != nil {
+			fmt.Printf("\033[31m[ERR]\033[0m Review failed: %v\n", err)
+		} else {
+			fmt.Println("\n\033[1;34m--- MICRO CODE REVIEW ---\033[0m")
+			fmt.Println(reviewText)
+			fmt.Println("--------------------------------------------------")
+
+			confirm := "y"
+			fmt.Print("Proceed to commit? [Y/n]: ")
+			fmt.Scanln(&confirm)
+			if confirm != "" && strings.ToLower(confirm) != "y" {
+				return
+			}
+		}
 	}
 
 	config, err := LoadConfig()
@@ -640,26 +934,44 @@ func main() {
 	}
 
 	if result.Valid && len(result.Errors) == 0 {
-		fmt.Println("[PASS] Commit message is valid")
+		fmt.Println("\033[32m[PASS]\033[0m Commit message is valid")
 	}
 
-	if !result.Valid && config.GroqAPIKey != "" {
-		fmt.Println("\n[ AI ] Suggestion:")
+	if !result.Valid && config.APIKey != "" {
+		fmt.Println("\n\033[1;36m[ AI ] Suggestion:\033[0m")
 		fmt.Println("--------------------------------------------------")
 		improved, err := EnhanceWithAI(commitMessage, config)
-		if err == nil {
-			fmt.Printf("Format: %s\n", improved)
-			fmt.Println("\nTO USE THIS MESSAGE:")
-			fmt.Printf("   git commit -m \"%s\"\n", improved)
+		if err == nil && improved != "" {
+			fmt.Printf("\033[1mFormat:\033[0m %s\n", improved)
+
+			fmt.Print("\nApply this suggestion? [y/N]: ")
+			var apply string
+			fmt.Scanln(&apply)
+			if strings.ToLower(apply) == "y" {
+				if *filePath != "" {
+					err = os.WriteFile(*filePath, []byte(improved), 0644)
+					if err != nil {
+						fmt.Printf("\033[31m[FAIL]\033[0m Failed to update commit message: %v\n", err)
+					} else {
+						fmt.Println("\033[32m[DONE]\033[0m Suggestion applied. Please run the commit command again.")
+						return
+					}
+				} else {
+					fmt.Println("\033[1mTIP:\033[0m Use this message with:")
+					fmt.Printf("   git commit -m \"%s\"\n", improved)
+				}
+			}
+		} else if err != nil {
+			fmt.Printf("\033[33m[WARN]\033[0m AI suggestion failed: %v\n", err)
 		}
 	}
 
 	if !result.Valid || (config.StrictMode && len(result.Warnings) > 0) {
-		fmt.Println("\n❌ Commit rejected")
+		fmt.Println("\n\033[31m❌ Commit rejected\033[0m")
 		os.Exit(1)
 	}
 
-	fmt.Println("\n🎉 Commit accepted!")
+	fmt.Println("\n\033[32m🎉 Commit accepted!\033[0m")
 }
 
 func maskAPIKey(key string) string {
