@@ -200,11 +200,20 @@ func FormatCommitMessage(raw string) string {
 	return strings.Join(lines, "\n")
 }
 
+func IsVersionCommit(message string) bool {
+	// Matches patterns like v1.0.0, v2.3, v0.1.0-alpha, etc.
+	re := regexp.MustCompile(`^v\d+(\.\d+)*(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$`)
+	return re.MatchString(message)
+}
+
 func Lint(message string, config *Config) LintResult {
 	result := LintResult{Valid: true, Errors: []string{}, Warnings: []string{}}
 	if message == "" {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Commit message cannot be empty")
+		return result
+	}
+	if IsVersionCommit(message) {
 		return result
 	}
 	parsed, err := ParseCommitMessage(message)
@@ -905,7 +914,9 @@ func main() {
 	fmt.Println("\n--- COMMIT ANALYSIS ---")
 	fmt.Println("--------------------------------------------------")
 
-	if parsed.Type != "" {
+	if IsVersionCommit(commitMessage) {
+		fmt.Printf("Release Version: %s\n", commitMessage)
+	} else if parsed.Type != "" {
 		fmt.Printf("Type:        %s\n", parsed.Type)
 		if parsed.Scope != "" {
 			fmt.Printf("Scope:       %s\n", parsed.Scope)
